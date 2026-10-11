@@ -203,6 +203,12 @@ python scripts/preflight.py --module <模块> --flavor <flavor> [--project <源�
     仅能查询/推荐/拉规则，随 Skill 公开分发也安全。含 MFi 的源码快照只认写令牌。
 15. **现成包目录云端下发**：包名/版本清单由 `GET /kb/apk_catalog_spec` 下发，新增 APK 版本不必改脚本重分发；
     离线回落本地缓存，再回落内置目录。
+    **服务端文件路径是 `$KB_DIR/apk_catalog.json`**（`KB_DIR` 默认 `/opt/estrella-kb/data/`，
+    ⚠️ **不是** `/opt/estrella-kb/`，放错目录接口会静默回落 builtin）。服务端每次请求都读文件、
+    无缓存，上传即生效无需重启。生成用 `scripts/gen_catalog.py`：
+    `python scripts/gen_catalog.py --version N` → 上传到 `$KB_DIR/apk_catalog.json`。
+    自证方式：在服务端临时加一条探针条目，客户端 `apk_catalog.py --list` 应多出该条，
+    `ESTRELLA_NO_CLOUD=1` 再跑一次应恢复内置条数。
 
 ## 内置可选能力（`scripts/local_kb.py` 支持）
 - 案例导出：导出全部缓存案例 JSON/CSV，可直接导入 MCP 数据库。
@@ -232,6 +238,7 @@ python scripts/preflight.py --module <模块> --flavor <flavor> [--project <源�
 | 第 6 步 · 产物上传并回填 artifact（闭环） | `python scripts/local_kb.py publish --key 「vehicle_key」 --apk 「产物.apk」 [--name 「显示名」]` |
 | 离线队列补交（联网自动，无需手调） | `python scripts/local_kb.py flush` |
 | 改动脚本后自验 | `python scripts/smoke_test.py`（语法/help/本地往返/离线队列/目录匹配/命名规范 6 项） |
+| 新增 APK 版本 → 生成云端目录 | `python scripts/gen_catalog.py --version N` → 把 `apk_catalog.json` 传到服务端 `$KB_DIR/`（默认 `/opt/estrella-kb/data/`） |
 | 冲突队列查看（含仲裁建议）/ 裁决 | `python scripts/local_kb.py conflicts` / `... resolve --conflict-id 「id」 --action auto\|keep_existing\|apply_incoming` |
 | 构建 + MD5 + 签名校验 | `python scripts/build_apk.py --project 「根」 --module 「模块」 --flavor 「风味」 ...` |
 | 改前快照 / 回滚 | `python scripts/snapshot.py snapshot 「src」 「tag」` / `rollback 「tag」` |
@@ -263,6 +270,7 @@ python scripts/preflight.py --module <模块> --flavor <flavor> [--project <源�
 - `scripts/snapshot.py` — 任务快照与一键回滚
 - `scripts/verify.py` — 预编译安全校验
 - `scripts/smoke_test.py` — 改动后自验（纯标准库、离线可跑）：脚本语法 / --help / 本地往返 / 离线补交队列 / 目录匹配 / 产物命名，6 项
+- `scripts/gen_catalog.py` — 从内置目录生成服务端 `apk_catalog.json`（新增 APK 版本时只改云端即可热更新，客户端零改动）
 - `scripts/desensitize.py` — 脱敏与入库准备
 - `assets/vehicle_summary_template.md` — 车辆信息摘要模板
 - `assets/delivery_checklist_template.md` — 交付物清单模板
