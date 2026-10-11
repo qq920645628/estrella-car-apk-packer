@@ -137,7 +137,41 @@ references/                  workflow, pitfalls (27 real cases), schema, securit
 assets/                      vehicle summary & delivery checklist templates
 data/kb.json                 local cache template
 server/server.js             self-hostable MCP knowledge-base server
+sync_github.py               one-command: sync the live Skill -> scrub token -> push to GitHub
+api_push.py                  GitHub REST-API pusher (fallback when `git` cannot reach GitHub)
+push.ps1 / push.bat          git-based pusher (auto-falls back to api_push.py)
 ```
+
+---
+
+## Keeping this repo in sync · 更新同步
+
+After any change to the Skill, run one command from this directory:
+
+```bash
+# CMD
+set GH_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+python sync_github.py
+
+# PowerShell
+$env:GH_TOKEN = 'ghp_xxxxxxxxxxxxxxxxxxxx'
+python sync_github.py
+```
+
+`sync_github.py` will:
+
+1. copy `SKILL.md` + `scripts/` + `references/` + `assets/` from the live Skill
+   (`~/.workbuddy/skills/estrella-car-apk-packer`, override with `--src`);
+   `data/` is **never** synced, so local vehicle records stay private;
+2. scrub the real KB token into `<YOUR_KB_TOKEN>` (auto-detected, no manual edit);
+3. delete files that no longer exist in the Skill;
+4. **skip the push entirely if nothing changed** (compares git blob SHAs against the remote tree);
+5. otherwise commit and move `refs/heads/main`.
+
+Useful flags: `--dry` (sync + diff only, never push), `--force` (push anyway).
+
+`push.ps1` tries `git push` first and automatically falls back to `api_push.py`
+when git cannot reach GitHub (corporate proxy / TLS interception).
 
 ---
 
@@ -221,6 +255,25 @@ python scripts/build_apk.py --project "C:/DiPlayBuild/DiPlay-Universal" --module
 ```
 
 自建服务端：`cd server && cp .env.example .env && node server.js`（监听 :7799）。
+
+### 更新同步到 GitHub
+
+Skill 每次改动后，在本目录执行一条命令即可同步到本仓库：
+
+```bash
+# CMD
+set GH_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+python sync_github.py
+
+# PowerShell
+$env:GH_TOKEN = 'ghp_xxxxxxxxxxxxxxxxxxxx'
+python sync_github.py
+```
+
+它会：复制 `SKILL.md` + `scripts/` + `references/` + `assets/`（`data/` 不同步，本地车型记录不外泄）
+→ 自动把真实 token 替换为 `<YOUR_KB_TOKEN>` → 删除 Skill 里已不存在的文件
+→ **无变化则不推送**（与远端比对 blob SHA）→ 有变化才提交并移动 `main`。
+可选参数：`--dry`（只同步+比对，不推送）、`--force`（强制推送）。
 
 ### 注意事项
 
