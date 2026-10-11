@@ -9,6 +9,7 @@
   4. 离线补交队列：写盘 -> flush 出队
   5. apk_catalog 候选匹配（内置目录，不联网）
   6. 产物命名规范
+  7. 版本一致性：VERSION / SKILL.md 版本行 / CHANGELOG.md（当前版本行 + 该版本条目）三处必须一致
 用法： python scripts/smoke_test.py
 """
 import json
@@ -126,9 +127,39 @@ def t_naming():
     return ok, name
 
 
+# 7) 版本一致性（版本树：每版都要有说明）
+def t_version():
+    root = os.path.dirname(HERE)
+    vfp = os.path.join(root, "VERSION")
+    if not os.path.exists(vfp):
+        return False, "缺少 VERSION 文件"
+    ver = open(vfp, encoding="utf-8").read().strip()
+    import re
+    if not re.fullmatch(r"\d+\.\d+\.\d+", ver):
+        return False, "VERSION 格式非 x.y.z: %r" % ver
+    skill = os.path.join(root, "SKILL.md")
+    log = os.path.join(root, "CHANGELOG.md")
+    bad = []
+    if os.path.exists(skill):
+        if not re.search(r"\*\*版本：v%s（" % re.escape(ver), open(skill, encoding="utf-8").read()):
+            bad.append("SKILL.md 版本行")
+    else:
+        bad.append("缺 SKILL.md")
+    if os.path.exists(log):
+        t = open(log, encoding="utf-8").read()
+        if not re.search(r"\*\*当前版本：v%s（" % re.escape(ver), t):
+            bad.append("CHANGELOG 当前版本行")
+        if not re.search(r"^## v%s · " % re.escape(ver), t, re.M):
+            bad.append("CHANGELOG 缺 v%s 说明条目" % ver)
+    else:
+        bad.append("缺 CHANGELOG.md")
+    return (not bad), ("不一致: " + ", ".join(bad) if bad else "v%s 三处一致且有说明" % ver)
+
+
 for n, f in [("脚本语法编译", t_compile), ("脚本 --help", t_help),
              ("local_kb 本地往返", t_roundtrip), ("离线补交队列", t_pending),
-             ("现成包目录匹配", t_catalog), ("产物命名规范", t_naming)]:
+             ("现成包目录匹配", t_catalog), ("产物命名规范", t_naming),
+             ("版本一致性", t_version)]:
     check(n, f)
 
 failed = [r for r in results if not r[1]]

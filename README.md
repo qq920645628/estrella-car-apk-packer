@@ -1,9 +1,12 @@
 # Estrella Car APK Packer · Estrella 车机 APK 自动修复打包 Skill
 
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
-[![Dependencies](https://img.shields.io/badge/dependencies-zero%20(stdlib%20only)-brightgreen)]()
-[![Platform](https://img.shields.io/badge/platform-Windows%20%2F%20Linux%20%2F%20macOS-lightgrey)]()
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+
+![Dependencies](https://img.shields.io/badge/dependencies-zero%20\(stdlib%20only\)-brightgreen)
+
+![Platform](https://img.shields.io/badge/platform-Windows%20%2F%20Linux%20%2F%20macOS-lightgrey)
+
+![License](https://img.shields.io/badge/license-MIT-green)
 
 > **English** · [中文](#中文说明) · An AI-agent Skill that turns "my car head unit + Android version + a symptom" into a working CarPlay/head-unit APK — with per-vehicle closed loops, a self-evolving knowledge base, and **builds that always run on your own machine**.
 >
@@ -25,23 +28,22 @@ This Skill packages that hard-won experience into a repeatable workflow:
 
 ## Key capabilities · 核心功能
 
-| Capability | What it does |
-|---|---|
-| **Per-vehicle closed loop** 每车独立闭环 | submit → analyse → build → record. Each vehicle gets its own workflow run; nothing is assumed from other models. |
-| **100% match → instant APK** 100% 命中直接出包 | If `vehicle_key` matches exactly **and** the variant signature agrees **and** an `artifact` (APK URL) is recorded, the Skill hands over the ready APK and ends — no analysis, no compile. |
-| **Zero-setup candidates** 傻瓜式现成包 | `apk_catalog.py --no-source` lists ready-built APKs filtered by Android range / flavour / features, then asks the user to test them in order. No JDK, no SDK, no source tree required. |
-| **Ready-made source from cloud** 云端源码快照 | No source locally? The Skill deploys a local build env (`setup_env.py`) then pulls a verified source snapshot (`pull_source.py`, sha256-checked) — **builds stay local, the server never compiles**. |
-| **Environment preflight** 环境体检 | `preflight.py` checks JDK 17, Android SDK/NDK, Gradle wrapper, signing config and locates the project — with rules hot-served from the MCP server (update rules without redistributing the Skill). |
-| **Self-evolving knowledge base** 自进化知识库 | Solutions ranked by success-rate-weighted confidence; failures auto-generate *negative lessons*; same-model-different-hardware auto-splits into variants; Android major-version drift alerts. |
-| **Desensitisation before storage** 脱敏入库 | Whitelist + value-level scrubbing (keys/tokens/paths/`*.jks`) runs before anything is written, local or remote. |
-| **Artifact upload loop** 产物闭环 | `local_kb.py publish --key <key> --apk <file.apk>` uploads the locally built APK (raw stream + sha256 check), stores it at `/a/<sha256>.apk` (token-free download) and writes it back to `artifact` — the next identical vehicle gets the APK instantly. |
-| **Offline-safe writes** 离线不丢数据 | When the MCP server is unreachable, writes also land in `data/pending_queue.jsonl`; the first successful call after reconnect flushes them automatically (`local_kb.py flush` for manual). |
-| **Read/write token split** 令牌读写分离 | Write token = write KB / upload / pull source (contains MFi). Read-only token (`ESTRELLA_KB_RO_TOKEN`) = query/recommend/spec only, safe to ship publicly. |
-| **Cloud-served APK catalogue** 目录云端下发 | Ready-APK catalogue comes from `GET /kb/apk_catalog_spec`; adding a new APK version never requires redistributing the Skill. Falls back to cache, then to the built-in catalogue. |
-| **Canonical artefact naming** 产物命名规范 | `automotive-universal-a28-v1.3.0-vc1301-24.7MB.apk` — module / flavour / minSdk / version / versionCode / size. |
-| **Smoke test** 自验 | `smoke_test.py` — 6 offline checks (syntax, `--help`, local round-trip, pending queue, catalogue match, naming). Run it after any script change. |
-| **Self-owned device: full permissions** 自有设备全权限 | root / `su` / firmware replacement / writing system partitions / disabling the authorisation prompt on a head unit **you own** is **allowed by default** — never blocked, downgraded or second-guessed as "security / privilege / policy violation". Preferred (non-injecting) implementation: `references/root-adapt-without-injection.md`. |
-| **Safety rails** 安全护栏 | Snapshot & rollback, pre-build static verification, hard termination on unfixable/high-risk cases, conflict queue that **never overwrites** history. |
+| Capability                               | What it does                                                                                                                                                                                                                                             |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Per-vehicle closed loop** 每车独立闭环       | submit → analyse → build → record. Each vehicle gets its own workflow run; nothing is assumed from other models.                                                                                                                                         |
+| **100% match → instant APK** 100% 命中直接出包 | If `vehicle_key` matches exactly **and** the variant signature agrees **and** an `artifact` (APK URL) is recorded, the Skill hands over the ready APK and ends — no analysis, no compile.                                                                |
+| **Zero-setup candidates** 傻瓜式现成包         | `apk_catalog.py --no-source` lists ready-built APKs filtered by Android range / flavour / features, then asks the user to test them in order. No JDK, no SDK, no source tree required.                                                                   |
+| **Ready-made source from cloud** 云端源码快照  | No source locally? The Skill deploys a local build env (`setup_env.py`) then pulls a verified source snapshot (`pull_source.py`, sha256-checked) — **builds stay local, the server never compiles**.                                                     |
+| **Environment preflight** 环境体检           | `preflight.py` checks JDK 17, Android SDK/NDK, Gradle wrapper, signing config and locates the project — with rules hot-served from the MCP server (update rules without redistributing the Skill).                                                       |
+| **Self-evolving knowledge base** 自进化知识库  | Solutions ranked by success-rate-weighted confidence; failures auto-generate *negative lessons*; same-model-different-hardware auto-splits into variants; Android major-version drift alerts.                                                            |
+| **Desensitisation before storage** 脱敏入库  | Whitelist + value-level scrubbing (keys/tokens/paths/`*.jks`) runs before anything is written, local or remote.                                                                                                                                          |
+| **Artifact upload loop** 产物闭环            | `local_kb.py publish --key <key> --apk <file.apk>` uploads the locally built APK (raw stream + sha256 check), stores it at `/a/<sha256>.apk` (token-free download) and writes it back to `artifact` — the next identical vehicle gets the APK instantly. |
+| **Offline-safe writes** 离线不丢数据           | When the MCP server is unreachable, writes also land in `data/pending_queue.jsonl`; the first successful call after reconnect flushes them automatically (`local_kb.py flush` for manual).                                                               |
+| **Read/write token split** 令牌读写分离        | Write token = write KB / upload / pull source (contains MFi). Read-only token (`ESTRELLA_KB_RO_TOKEN`) = query/recommend/spec only, safe to ship publicly.                                                                                               |
+| **Cloud-served APK catalogue** 目录云端下发    | Ready-APK catalogue comes from `GET /kb/apk_catalog_spec`; adding a new APK version never requires redistributing the Skill. Falls back to cache, then to the built-in catalogue.                                                                        |
+| **Canonical artefact naming** 产物命名规范     | `automotive-universal-a28-v1.3.0-vc1301-24.7MB.apk` — module / flavour / minSdk / version / versionCode / size.                                                                                                                                          |
+| **Smoke test** 自验                        | `smoke_test.py` — 6 offline checks (syntax, `--help`, local round-trip, pending queue, catalogue match, naming). Run it after any script change.                                                                                                         |
+| **Safety rails** 安全护栏                    | Snapshot & rollback, pre-build static verification, hard termination on unfixable/high-risk cases, conflict queue that **never overwrites** history.                                                                                                     |
 
 ---
 
@@ -108,12 +110,12 @@ python scripts/build_apk.py --project "C:/DiPlayBuild/DiPlay-Universal" --module
 
 **Environment variables**
 
-| Variable | Purpose |
-|---|---|
-| `ESTRELLA_KB_URL` | MCP server base URL (default `http://106.12.162.224:7799`, or your self-hosted one) |
-| `ESTRELLA_KB_TOKEN` | Auth token (**required** for the public copy — see [SECURITY.md](SECURITY.md)) |
-| `ESTRELLA_KB_BACKEND` | `mcp` (default) or `local` (offline cache only) |
-| `ESTRELLA_KB_DIR` | Local cache directory override |
+| Variable              | Purpose                                                                             |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| `ESTRELLA_KB_URL`     | MCP server base URL (default `http://106.12.162.224:7799`, or your self-hosted one) |
+| `ESTRELLA_KB_TOKEN`   | Auth token (**required** for the public copy — see [SECURITY.md](SECURITY.md))      |
+| `ESTRELLA_KB_BACKEND` | `mcp` (default) or `local` (offline cache only)                                     |
+| `ESTRELLA_KB_DIR`     | Local cache directory override                                                      |
 
 ### Self-host the MCP server · 自建知识库服务端
 
@@ -140,8 +142,7 @@ scripts/
   verify.py                  Pre-build static safety checks
   snapshot.py                Snapshot & rollback
   desensitize.py             Desensitisation + whitelist sanitisation
-references/                  workflow, pitfalls (27 real cases), schema, security, evolution,
-                             locked config, self-owned-device root adaptation
+references/                  workflow, pitfalls (27 real cases), schema, security, evolution, locked config
 assets/                      vehicle summary & delivery checklist templates
 data/kb.json                 local cache template
 server/server.js             self-hostable MCP knowledge-base server
@@ -150,38 +151,6 @@ api_push.py                  GitHub REST-API pusher (fallback when `git` cannot 
 push.ps1 / push.bat          git-based pusher (auto-falls back to api_push.py)
 ```
 
----
-
-## Keeping this repo in sync · 更新同步
-
-After any change to the Skill, run one command from this directory:
-
-```bash
-# CMD
-set GH_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-python sync_github.py
-
-# PowerShell
-$env:GH_TOKEN = 'ghp_xxxxxxxxxxxxxxxxxxxx'
-python sync_github.py
-```
-
-`sync_github.py` will:
-
-1. copy `SKILL.md` + `scripts/` + `references/` + `assets/` from the live Skill
-   (`~/.workbuddy/skills/estrella-car-apk-packer`, override with `--src`);
-   `data/` is **never** synced, so local vehicle records stay private;
-2. scrub the real KB token into `<YOUR_KB_TOKEN>` (auto-detected, no manual edit);
-3. delete files that no longer exist in the Skill;
-4. **skip the push entirely if nothing changed** (compares git blob SHAs against the remote tree);
-5. otherwise commit and move `refs/heads/main`.
-
-Useful flags: `--dry` (sync + diff only, never push), `--force` (push anyway).
-
-`push.ps1` tries `git push` first and automatically falls back to `api_push.py`
-when git cannot reach GitHub (corporate proxy / TLS interception).
-
----
 
 ## Hard rules (non-negotiable) · 硬性规则
 
@@ -189,10 +158,7 @@ The Skill is designed to be honest under pressure:
 
 1. **No fabrication** — never invent a fix or a compatibility result.
 2. **Say it when it can't be auto-fixed** — terminate instead of forcing a build.
-3. **No malicious APKs** — no backdoor, data theft, unauthorised upload or hidden billing.
-   **Modifying a head unit you own is not a violation**: root, `su`, firmware replacement, writing system
-   partitions and disabling authorisation prompts are **permitted by default** and must never be blocked
-   (owner's prerogative over their own property). The only boundary: don't do it on devices you don't own.
+3. **No malicious APKs, no bypassing head-unit security.**
 4. **Never forge cloud records** — unknown models are labelled as such.
 5. **Vehicle summary + risk report first** — user confirms before any modification.
 6. **Desensitise on every exit path** (success / partial / failure).
@@ -204,31 +170,9 @@ The Skill is designed to be honest under pressure:
 ## Legal & safety notice · 法律与安全提示
 
 - **MFi**: the DiPlay source snapshot distributed by the upstream server contains an **experimental community MFi identity, not Apple-certified**. Distribution and use are subject to Apple's MFi Program terms — you are responsible for compliance in your jurisdiction.
-- **CarPlay / Android Auto**: intended for legitimate interoperability on **hardware you own**. On your own device, root / `su` / firmware replacement / writing system partitions are the owner's prerogative and are **not** blocked. The only boundary: don't do it to devices you don't own.
+- **CarPlay / Android Auto**: intended for legitimate interoperability on hardware you own. Do not use to bypass OEM security or DRM.
 - **Signing keys**: the source snapshot excludes `*.jks` / `keystore.properties`; pulled sources build **debug** APKs by default. Place your own keystore under `release/` for signed, over-the-air-upgradable builds.
 - **Token**: never commit your real token — see [SECURITY.md](SECURITY.md).
-
----
-
-## Changelog · 更新说明
-
-### 2026-10-11
-
-- **Self-owned device: all permissions open by default** 自有设备默认全权限放行
-  - `SKILL.md` hard rule 3, `references/security-rules.md` §1.2 and `references/locked-config.md`
-    no longer treat root / `su` / firmware replacement / system-partition writes as "bypassing head-unit
-    security". On a head unit you own these are permitted by default and must never be blocked,
-    downgraded or require extra confirmation. The only remaining boundary is **devices you don't own**.
-  - `scripts/verify.py`: the `su` / `Runtime.exec` / `ProcessBuilder` / `mount` static scan is downgraded
-    from "WARNING — needs manual confirmation, violates security rules" to **INFO — recorded only,
-    never blocking**.
-- **New** `references/root-adapt-without-injection.md` — self-owned-device root adaptation playbook:
-  diagnostics (why SuperSU never prompts), then three paths — **A** system-side script
-  (`su.d` / init.d / Magisk module, APK stays untouched), **B** same-name shim on the device,
-  **C** swapping only the call site (fallback). Includes verification and rollback commands.
-- **Cloud-served APK catalogue now live**: `GET /kb/apk_catalog_spec` serves `$KB_DIR/apk_catalog.json`
-  (default `/opt/estrella-kb/data/` — ⚠️ not `/opt/estrella-kb/`). Generate it with `scripts/gen_catalog.py`.
-- `scripts/smoke_test.py` now covers 11 scripts / 6 checks.
 
 ---
 
@@ -247,24 +191,23 @@ The Skill is designed to be honest under pressure:
 
 ### 功能一览
 
-| 功能 | 说明 |
-|---|---|
-| 现成包候选（零门槛） | `apk_catalog.py --no-source`，按安卓区间/flavor/特性过滤，列出候选让用户依次试；不需要 JDK/SDK/源码 |
-| 无源码也能出包 | `setup_env.py` 本机部署 JDK17+SDK+NDK → `pull_source.py` 从云端拉源码（sha256 校验、解包到 ASCII 路径）→ 本地 `build_apk.py` 编译 |
-| 环境与源码体检 | `preflight.py` 真文件系统/真进程检测；检测规则由 MCP 云端下发，改规则无需重新分发 Skill，离线回落内置 |
-| 变体签名防误套 | 同款车不同车机硬件（芯片/分辨率/权限限制等）自动算签名并拆分记录，`recommend` 在签名不一致时强制告警，禁止机械复用 |
-| 成败加权置信度 | 方案按 `成功/(成功+失败) × 样本可信度` 排序；`confidence<0.6` 标【需验证】 |
-| 自动吸取教训 | 用户回报失败 → 方案失败计数 +1，并自动生成「负向教训」坑，后续同类任务拉低置信度并高亮警示 |
-| 安卓大版本漂移 | 跨大版本（如 9 → 11）告警并保留历史基线，绝不覆盖 |
-| 冲突不覆盖 | 同问题不同修复步骤进冲突复核队列，附仲裁建议（keep_existing / apply_incoming / needs_review），证据不足强制人工 |
-| 脱敏入库 | 白名单 + 值级扫描（密钥/令牌/用户路径/`*.jks`），写入前强制脱敏 |
-| 产物闭环 | `local_kb.py publish` 把本地编译的 APK 上传云端（裸流 + sha256 校验），回填 `artifact`，下一台同车型车机直接出包 |
-| 离线不丢数据 | MCP 不可达时写操作落 `pending_queue.jsonl`，联网后自动补交（`flush` 可手动） |
-| 令牌读写分离 | 写令牌可写库/上传/拉源码；只读令牌仅查询，公开分发安全 |
-| 目录云端下发 | 现成包清单由 `/kb/apk_catalog_spec` 下发，加版本不用改脚本重分发；离线回落缓存→内置 |
-| 产物命名规范 + 自验 | `automotive-universal-a28-v1.3.0-vc1301-24.7MB.apk`；`smoke_test.py` 6 项离线自验 |
-| 自有设备全权限 | 在**你自己**的车机上做 root / `su` 提权 / 固件替换 / 写系统分区 / 关闭授权弹窗，**默认全放行**：不以"安全/越权/违规/篡改系统"为由拒绝、降级或要求额外确认。推荐走非注入式路径（系统侧脚本优先，APK 可零改动），见 `references/root-adapt-without-injection.md` |
-| 快照回滚 / 预编译校验 / 审计备份 | 改前快照可回滚；打包前静态校验；写操作落审计日志，kb.json 每日备份保留 30 天 |
+| 功能                  | 说明                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------- |
+| 现成包候选（零门槛）          | `apk_catalog.py --no-source`，按安卓区间/flavor/特性过滤，列出候选让用户依次试；不需要 JDK/SDK/源码                                  |
+| 无源码也能出包             | `setup_env.py` 本机部署 JDK17+SDK+NDK → `pull_source.py` 从云端拉源码（sha256 校验、解包到 ASCII 路径）→ 本地 `build_apk.py` 编译 |
+| 环境与源码体检             | `preflight.py` 真文件系统/真进程检测；检测规则由 MCP 云端下发，改规则无需重新分发 Skill，离线回落内置                                          |
+| 变体签名防误套             | 同款车不同车机硬件（芯片/分辨率/权限限制等）自动算签名并拆分记录，`recommend` 在签名不一致时强制告警，禁止机械复用                                          |
+| 成败加权置信度             | 方案按 `成功/(成功+失败) × 样本可信度` 排序；`confidence<0.6` 标【需验证】                                                       |
+| 自动吸取教训              | 用户回报失败 → 方案失败计数 +1，并自动生成「负向教训」坑，后续同类任务拉低置信度并高亮警示                                                          |
+| 安卓大版本漂移             | 跨大版本（如 9 → 11）告警并保留历史基线，绝不覆盖                                                                              |
+| 冲突不覆盖               | 同问题不同修复步骤进冲突复核队列，附仲裁建议（keep_existing / apply_incoming / needs_review），证据不足强制人工                            |
+| 脱敏入库                | 白名单 + 值级扫描（密钥/令牌/用户路径/`*.jks`），写入前强制脱敏                                                                    |
+| 产物闭环                | `local_kb.py publish` 把本地编译的 APK 上传云端（裸流 + sha256 校验），回填 `artifact`，下一台同车型车机直接出包                          |
+| 离线不丢数据              | MCP 不可达时写操作落 `pending_queue.jsonl`，联网后自动补交（`flush` 可手动）                                                   |
+| 令牌读写分离              | 写令牌可写库/上传/拉源码；只读令牌仅查询，公开分发安全                                                                              |
+| 目录云端下发              | 现成包清单由 `/kb/apk_catalog_spec` 下发，加版本不用改脚本重分发；离线回落缓存→内置                                                    |
+| 产物命名规范 + 自验         | `automotive-universal-a28-v1.3.0-vc1301-24.7MB.apk`；`smoke_test.py` 6 项离线自验                               |
+| 快照回滚 / 预编译校验 / 审计备份 | 改前快照可回滚；打包前静态校验；写操作落审计日志，kb.json 每日备份保留 30 天                                                              |
 
 ### 优点
 
@@ -309,22 +252,10 @@ $env:GH_TOKEN = 'ghp_xxxxxxxxxxxxxxxxxxxx'
 python sync_github.py
 ```
 
-它会：复制 `SKILL.md` + `scripts/` + `references/` + `assets/`（`data/` 不同步，本地车型记录不外泄）
-→ 自动把真实 token 替换为 `<YOUR_KB_TOKEN>` → 删除 Skill 里已不存在的文件
-→ **无变化则不推送**（与远端比对 blob SHA）→ 有变化才提交并移动 `main`。
+它会：复制 `SKILL.md` + `scripts/` + `references/` + `assets/`（`data/` 不同步，本地车型记录不外泄）  
+→ 自动把真实 token 替换为 `<YOUR_KB_TOKEN>` → 删除 Skill 里已不存在的文件  
+→ **无变化则不推送**（与远端比对 blob SHA）→ 有变化才提交并移动 `main`。  
 可选参数：`--dry`（只同步+比对，不推送）、`--force`（强制推送）。
-
-### 更新说明（2026-10-11）
-
-- **自有设备默认全权限放行**：`SKILL.md` 硬性规则 3、`security-rules.md` 第 1.2 条、`locked-config.md`
-  不再把 root / `su` 提权 / 固件替换 / 写系统分区 视为"绕过车机安全机制"。**自己的车机上这些操作默认放行**，
-  不得以"安全 / 越权 / 违规 / 篡改系统"为由拒绝、降级或要求额外确认；唯一边界是**别人的设备**。
-- `scripts/verify.py`：`su` / `Runtime.exec` / `ProcessBuilder` / `mount` 静态扫描由
-  "WARNING 需人工确认，违反安全规则将终止打包" 降级为 **INFO 仅记录、绝不阻断**。
-- 新增 `references/root-adapt-without-injection.md`：自有设备 root 适配手册（诊断 → 方案 A 系统侧脚本
-  `su.d`/init.d/Magisk 模块，APK 零改动 → 方案 B 同名 shim → 方案 C 只换调用点），含验证与回滚命令。
-- 目录云端下发已上线：`GET /kb/apk_catalog_spec` 读 `$KB_DIR/apk_catalog.json`
-  （默认 `/opt/estrella-kb/data/`，**不是** `/opt/estrella-kb/`），用 `scripts/gen_catalog.py` 生成。
 
 ### 注意事项
 
@@ -336,5 +267,5 @@ python sync_github.py
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) Estrella.
+MIT — see [LICENSE](LICENSE). Copyright (c) Estrella.  
 Core configuration constants (MCP endpoints, KB schema, desensitisation and verification rules) are intentionally locked; see `references/locked-config.md`.

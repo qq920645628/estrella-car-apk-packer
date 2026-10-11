@@ -8,6 +8,7 @@ schannel/openssl backends cannot negotiate, while curl/urllib work fine.
 import base64
 import json
 import os
+import re
 import ssl
 import sys
 import urllib.request
@@ -18,6 +19,36 @@ TOKEN = os.environ.get("GH_TOKEN", "")
 ROOT = r"C:\Users\Administrator\estrella-publish"
 SKIP = {".git", "__pycache__", ".workbuddy"}
 EXCLUDE_FILES = set()
+
+
+def _version():
+    """读 VERSION（由 scripts/release.py 维护），让每次推送都带版本号。"""
+    try:
+        with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as f:
+            return f.read().strip() or "0.0.0"
+    except Exception:
+        return "0.0.0"
+
+
+VER = _version()
+
+
+def _latest_note():
+    """取 CHANGELOG.md 里最新版本的说明，作为 commit body（保证每版都有说明）。"""
+    try:
+        t = open(os.path.join(ROOT, "CHANGELOG.md"), encoding="utf-8").read()
+        m = re.search(r"^## (v[\d.]+) · ([\d-]+) · (.+?)\s*$", t, re.M)
+        if not m:
+            return ""
+        sec = t[m.start():]
+        nxt = re.search(r"^## v[\d.]+ · ", sec[10:], re.M)
+        if nxt:
+            sec = sec[:nxt.start() + 10]
+        lines = [l for l in sec.splitlines()
+                 if re.match(r"^\d+\. ", l) or l.startswith("- ") or l.startswith("**性质**")]
+        return "release %s (%s): %s\n%s" % (m.group(1), m.group(2), m.group(3), "\n".join(lines[:10]))
+    except Exception:
+        return "see CHANGELOG.md"
 
 if not TOKEN:
     sys.exit("GH_TOKEN not set")
@@ -102,13 +133,8 @@ print("tree: %s" % t["sha"])
 # 4) commit (no parent: repo was created empty)
 c = req("POST", "/git/commits", {
     "message": (
-        "Estrella Car APK Packer: per-vehicle CarPlay/head-unit APK skill (bilingual README, sanitized)\n\n"
-        "2026-10-11:\n"
-        "- self-owned device: all permissions open by default (root/su/firmware/system-partition "
-        "are NOT blocked); only boundary = devices you don't own\n"
-        "- verify.py: su/Runtime.exec/ProcessBuilder/mount scan downgraded WARNING -> INFO (never blocks)\n"
-        "- new references/root-adapt-without-injection.md (system-side script / shim / call-site swap)\n"
-        "- scripts/gen_catalog.py: generate $KB_DIR/apk_catalog.json for cloud-served catalogue\n"
+        "v%s — Estrella Car APK Packer: per-vehicle CarPlay/head-unit APK skill "
+        "(bilingual README, sanitized)\n\n%s" % (VER, _latest_note())
     ),
     "tree": t["sha"],
     "parents": [base_sha],

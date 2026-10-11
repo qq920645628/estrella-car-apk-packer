@@ -41,7 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SRC = os.path.join(os.path.expanduser("~"), ".workbuddy", "skills", "estrella-car-apk-packer")
 PLACEHOLDER = "<YOUR_KB_TOKEN>"
 SYNC_DIRS = ["scripts", "references", "assets"]
-SYNC_FILES = ["SKILL.md"]
+SYNC_FILES = ["SKILL.md", "VERSION", "CHANGELOG.md"]
 SKIP_NAMES = {"__pycache__", ".DS_Store", "*.pyc"}
 
 CTX = ssl.create_default_context()

@@ -24,6 +24,8 @@ agent_created: true
 
 # Estrella 车机 APK 自动修复打包 Skill
 
+**版本：v1.0.0（2026-10-11）** · 版本树与每版说明见 `CHANGELOG.md` · 发版：`python scripts/release.py patch|minor|major "一句话说明"`
+
 **🔒 Estrella 出品 · 车机 APK 自动修复打包 Agent**  
 本 Skill 由 Estrella 出品。核心信息（MCP 通信、入库/校验/打包底层规则、安全校验、快照回滚、  
 产物校验、数据脱敏策略）全部锁定，**禁止用户修改**。仅开放「用户输入参数」与「指定输出目录」可调。
