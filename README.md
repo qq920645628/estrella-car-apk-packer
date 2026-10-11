@@ -34,6 +34,12 @@ This Skill packages that hard-won experience into a repeatable workflow:
 | **Environment preflight** 环境体检 | `preflight.py` checks JDK 17, Android SDK/NDK, Gradle wrapper, signing config and locates the project — with rules hot-served from the MCP server (update rules without redistributing the Skill). |
 | **Self-evolving knowledge base** 自进化知识库 | Solutions ranked by success-rate-weighted confidence; failures auto-generate *negative lessons*; same-model-different-hardware auto-splits into variants; Android major-version drift alerts. |
 | **Desensitisation before storage** 脱敏入库 | Whitelist + value-level scrubbing (keys/tokens/paths/`*.jks`) runs before anything is written, local or remote. |
+| **Artifact upload loop** 产物闭环 | `local_kb.py publish --key <key> --apk <file.apk>` uploads the locally built APK (raw stream + sha256 check), stores it at `/a/<sha256>.apk` (token-free download) and writes it back to `artifact` — the next identical vehicle gets the APK instantly. |
+| **Offline-safe writes** 离线不丢数据 | When the MCP server is unreachable, writes also land in `data/pending_queue.jsonl`; the first successful call after reconnect flushes them automatically (`local_kb.py flush` for manual). |
+| **Read/write token split** 令牌读写分离 | Write token = write KB / upload / pull source (contains MFi). Read-only token (`ESTRELLA_KB_RO_TOKEN`) = query/recommend/spec only, safe to ship publicly. |
+| **Cloud-served APK catalogue** 目录云端下发 | Ready-APK catalogue comes from `GET /kb/apk_catalog_spec`; adding a new APK version never requires redistributing the Skill. Falls back to cache, then to the built-in catalogue. |
+| **Canonical artefact naming** 产物命名规范 | `automotive-universal-a28-v1.3.0-vc1301-24.7MB.apk` — module / flavour / minSdk / version / versionCode / size. |
+| **Smoke test** 自验 | `smoke_test.py` — 6 offline checks (syntax, `--help`, local round-trip, pending queue, catalogue match, naming). Run it after any script change. |
 | **Safety rails** 安全护栏 | Snapshot & rollback, pre-build static verification, hard termination on unfixable/high-risk cases, conflict queue that **never overwrites** history. |
 
 ---
@@ -225,6 +231,11 @@ The Skill is designed to be honest under pressure:
 | 安卓大版本漂移 | 跨大版本（如 9 → 11）告警并保留历史基线，绝不覆盖 |
 | 冲突不覆盖 | 同问题不同修复步骤进冲突复核队列，附仲裁建议（keep_existing / apply_incoming / needs_review），证据不足强制人工 |
 | 脱敏入库 | 白名单 + 值级扫描（密钥/令牌/用户路径/`*.jks`），写入前强制脱敏 |
+| 产物闭环 | `local_kb.py publish` 把本地编译的 APK 上传云端（裸流 + sha256 校验），回填 `artifact`，下一台同车型车机直接出包 |
+| 离线不丢数据 | MCP 不可达时写操作落 `pending_queue.jsonl`，联网后自动补交（`flush` 可手动） |
+| 令牌读写分离 | 写令牌可写库/上传/拉源码；只读令牌仅查询，公开分发安全 |
+| 目录云端下发 | 现成包清单由 `/kb/apk_catalog_spec` 下发，加版本不用改脚本重分发；离线回落缓存→内置 |
+| 产物命名规范 + 自验 | `automotive-universal-a28-v1.3.0-vc1301-24.7MB.apk`；`smoke_test.py` 6 项离线自验 |
 | 快照回滚 / 预编译校验 / 审计备份 | 改前快照可回滚；打包前静态校验；写操作落审计日志，kb.json 每日备份保留 30 天 |
 
 ### 优点
