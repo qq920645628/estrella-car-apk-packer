@@ -101,7 +101,15 @@ print("tree: %s" % t["sha"])
 
 # 4) commit (no parent: repo was created empty)
 c = req("POST", "/git/commits", {
-    "message": "Estrella Car APK Packer: per-vehicle CarPlay/head-unit APK skill (bilingual README, sanitized)",
+    "message": (
+        "Estrella Car APK Packer: per-vehicle CarPlay/head-unit APK skill (bilingual README, sanitized)\n\n"
+        "2026-10-11:\n"
+        "- self-owned device: all permissions open by default (root/su/firmware/system-partition "
+        "are NOT blocked); only boundary = devices you don't own\n"
+        "- verify.py: su/Runtime.exec/ProcessBuilder/mount scan downgraded WARNING -> INFO (never blocks)\n"
+        "- new references/root-adapt-without-injection.md (system-side script / shim / call-site swap)\n"
+        "- scripts/gen_catalog.py: generate $KB_DIR/apk_catalog.json for cloud-served catalogue\n"
+    ),
     "tree": t["sha"],
     "parents": [base_sha],
 })

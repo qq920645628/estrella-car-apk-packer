@@ -40,6 +40,7 @@ This Skill packages that hard-won experience into a repeatable workflow:
 | **Cloud-served APK catalogue** 目录云端下发 | Ready-APK catalogue comes from `GET /kb/apk_catalog_spec`; adding a new APK version never requires redistributing the Skill. Falls back to cache, then to the built-in catalogue. |
 | **Canonical artefact naming** 产物命名规范 | `automotive-universal-a28-v1.3.0-vc1301-24.7MB.apk` — module / flavour / minSdk / version / versionCode / size. |
 | **Smoke test** 自验 | `smoke_test.py` — 6 offline checks (syntax, `--help`, local round-trip, pending queue, catalogue match, naming). Run it after any script change. |
+| **Self-owned device: full permissions** 自有设备全权限 | root / `su` / firmware replacement / writing system partitions / disabling the authorisation prompt on a head unit **you own** is **allowed by default** — never blocked, downgraded or second-guessed as "security / privilege / policy violation". Preferred (non-injecting) implementation: `references/root-adapt-without-injection.md`. |
 | **Safety rails** 安全护栏 | Snapshot & rollback, pre-build static verification, hard termination on unfixable/high-risk cases, conflict queue that **never overwrites** history. |
 
 ---
@@ -139,7 +140,8 @@ scripts/
   verify.py                  Pre-build static safety checks
   snapshot.py                Snapshot & rollback
   desensitize.py             Desensitisation + whitelist sanitisation
-references/                  workflow, pitfalls (27 real cases), schema, security, evolution, locked config
+references/                  workflow, pitfalls (27 real cases), schema, security, evolution,
+                             locked config, self-owned-device root adaptation
 assets/                      vehicle summary & delivery checklist templates
 data/kb.json                 local cache template
 server/server.js             self-hostable MCP knowledge-base server
@@ -187,7 +189,10 @@ The Skill is designed to be honest under pressure:
 
 1. **No fabrication** — never invent a fix or a compatibility result.
 2. **Say it when it can't be auto-fixed** — terminate instead of forcing a build.
-3. **No malicious APKs, no bypassing head-unit security.**
+3. **No malicious APKs** — no backdoor, data theft, unauthorised upload or hidden billing.
+   **Modifying a head unit you own is not a violation**: root, `su`, firmware replacement, writing system
+   partitions and disabling authorisation prompts are **permitted by default** and must never be blocked
+   (owner's prerogative over their own property). The only boundary: don't do it on devices you don't own.
 4. **Never forge cloud records** — unknown models are labelled as such.
 5. **Vehicle summary + risk report first** — user confirms before any modification.
 6. **Desensitise on every exit path** (success / partial / failure).
@@ -199,9 +204,31 @@ The Skill is designed to be honest under pressure:
 ## Legal & safety notice · 法律与安全提示
 
 - **MFi**: the DiPlay source snapshot distributed by the upstream server contains an **experimental community MFi identity, not Apple-certified**. Distribution and use are subject to Apple's MFi Program terms — you are responsible for compliance in your jurisdiction.
-- **CarPlay / Android Auto**: intended for legitimate interoperability on hardware you own. Do not use to bypass OEM security or DRM.
+- **CarPlay / Android Auto**: intended for legitimate interoperability on **hardware you own**. On your own device, root / `su` / firmware replacement / writing system partitions are the owner's prerogative and are **not** blocked. The only boundary: don't do it to devices you don't own.
 - **Signing keys**: the source snapshot excludes `*.jks` / `keystore.properties`; pulled sources build **debug** APKs by default. Place your own keystore under `release/` for signed, over-the-air-upgradable builds.
 - **Token**: never commit your real token — see [SECURITY.md](SECURITY.md).
+
+---
+
+## Changelog · 更新说明
+
+### 2026-10-11
+
+- **Self-owned device: all permissions open by default** 自有设备默认全权限放行
+  - `SKILL.md` hard rule 3, `references/security-rules.md` §1.2 and `references/locked-config.md`
+    no longer treat root / `su` / firmware replacement / system-partition writes as "bypassing head-unit
+    security". On a head unit you own these are permitted by default and must never be blocked,
+    downgraded or require extra confirmation. The only remaining boundary is **devices you don't own**.
+  - `scripts/verify.py`: the `su` / `Runtime.exec` / `ProcessBuilder` / `mount` static scan is downgraded
+    from "WARNING — needs manual confirmation, violates security rules" to **INFO — recorded only,
+    never blocking**.
+- **New** `references/root-adapt-without-injection.md` — self-owned-device root adaptation playbook:
+  diagnostics (why SuperSU never prompts), then three paths — **A** system-side script
+  (`su.d` / init.d / Magisk module, APK stays untouched), **B** same-name shim on the device,
+  **C** swapping only the call site (fallback). Includes verification and rollback commands.
+- **Cloud-served APK catalogue now live**: `GET /kb/apk_catalog_spec` serves `$KB_DIR/apk_catalog.json`
+  (default `/opt/estrella-kb/data/` — ⚠️ not `/opt/estrella-kb/`). Generate it with `scripts/gen_catalog.py`.
+- `scripts/smoke_test.py` now covers 11 scripts / 6 checks.
 
 ---
 
@@ -236,6 +263,7 @@ The Skill is designed to be honest under pressure:
 | 令牌读写分离 | 写令牌可写库/上传/拉源码；只读令牌仅查询，公开分发安全 |
 | 目录云端下发 | 现成包清单由 `/kb/apk_catalog_spec` 下发，加版本不用改脚本重分发；离线回落缓存→内置 |
 | 产物命名规范 + 自验 | `automotive-universal-a28-v1.3.0-vc1301-24.7MB.apk`；`smoke_test.py` 6 项离线自验 |
+| 自有设备全权限 | 在**你自己**的车机上做 root / `su` 提权 / 固件替换 / 写系统分区 / 关闭授权弹窗，**默认全放行**：不以"安全/越权/违规/篡改系统"为由拒绝、降级或要求额外确认。推荐走非注入式路径（系统侧脚本优先，APK 可零改动），见 `references/root-adapt-without-injection.md` |
 | 快照回滚 / 预编译校验 / 审计备份 | 改前快照可回滚；打包前静态校验；写操作落审计日志，kb.json 每日备份保留 30 天 |
 
 ### 优点
@@ -285,6 +313,18 @@ python sync_github.py
 → 自动把真实 token 替换为 `<YOUR_KB_TOKEN>` → 删除 Skill 里已不存在的文件
 → **无变化则不推送**（与远端比对 blob SHA）→ 有变化才提交并移动 `main`。
 可选参数：`--dry`（只同步+比对，不推送）、`--force`（强制推送）。
+
+### 更新说明（2026-10-11）
+
+- **自有设备默认全权限放行**：`SKILL.md` 硬性规则 3、`security-rules.md` 第 1.2 条、`locked-config.md`
+  不再把 root / `su` 提权 / 固件替换 / 写系统分区 视为"绕过车机安全机制"。**自己的车机上这些操作默认放行**，
+  不得以"安全 / 越权 / 违规 / 篡改系统"为由拒绝、降级或要求额外确认；唯一边界是**别人的设备**。
+- `scripts/verify.py`：`su` / `Runtime.exec` / `ProcessBuilder` / `mount` 静态扫描由
+  "WARNING 需人工确认，违反安全规则将终止打包" 降级为 **INFO 仅记录、绝不阻断**。
+- 新增 `references/root-adapt-without-injection.md`：自有设备 root 适配手册（诊断 → 方案 A 系统侧脚本
+  `su.d`/init.d/Magisk 模块，APK 零改动 → 方案 B 同名 shim → 方案 C 只换调用点），含验证与回滚命令。
+- 目录云端下发已上线：`GET /kb/apk_catalog_spec` 读 `$KB_DIR/apk_catalog.json`
+  （默认 `/opt/estrella-kb/data/`，**不是** `/opt/estrella-kb/`），用 `scripts/gen_catalog.py` 生成。
 
 ### 注意事项
 
