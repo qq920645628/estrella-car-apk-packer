@@ -53,6 +53,15 @@ git remote add origin $remote
 git branch -M main
 Write-Host "Pushing to https://github.com/$owner/$RepoName ..."
 git push -u origin main
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "git push failed (proxy / TLS). Falling back to REST API push ..." -ForegroundColor Yellow
+    $py = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
+    if (-not $py) { throw "Neither git nor python is available for pushing." }
+    & $py.Name (Join-Path $repoRoot "api_push.py")
+    if ($LASTEXITCODE -ne 0) { throw "REST API push failed too." }
+}
 
 git remote set-url origin "https://github.com/$owner/$RepoName.git"
 Write-Host ""
