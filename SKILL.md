@@ -156,6 +156,8 @@ python scripts/preflight.py --module <模块> --flavor <flavor> [--project <源�
    下次同 `vehicle_key` 100% 命中即可直接出包；
 ③ 清洗校验：空白/明显错误过滤；与库完全一致→更新访问统计；同车型版本硬件差异→新增子变体；冲突→进人工复核队列（禁止覆盖）；
 ④ 入库：`scripts/local_kb.py upsert` 写入 MCP 线上知识库（不可达时自动回退本地缓存）。
+⑤ **上传产物**：`scripts/local_kb.py publish --key <vehicle_key> --apk <产物.apk>` —— 自动算 sha256/体积、
+   上传到云端并回填 `artifact`（下载走 `/a/<sha256>.apk`，免令牌），下次同车型 100% 命中即可直接出包。
 输出入库回执。
 
 ### 第 7 步 · 输出交付物清单
@@ -192,6 +194,15 @@ python scripts/preflight.py --module <模块> --flavor <flavor> [--project <源�
 9. 安卓大版本漂移监控：车机跨安卓大版本（如 9 → 11）时 `recommend`/`upsert` 返回漂移告警，提示旧方案须人工复核，**绝不覆盖历史基线版本**（漂移版本另存 `android_versions_seen`）。
 10. 冲突半自动仲裁：冲突队列每条自动附 `suggest`（keep_existing / apply_incoming / needs_review）与理由；证据充分可 `resolve --action auto` 一键裁决，证据不足强制人工，**绝不强裁**。
 11. 限频与异常告警：按 IP+Token 双维度限频；认证失败突发（10 分钟内 30 次）自动写审计日志告警，防撞库/令牌探测。
+12. **离线不丢数据**：MCP 不可达时写操作（`upsert`/`report_outcome`）除回退本地缓存外，还会落
+    `data/pending_queue.jsonl`；联网后首个动作自动补交（成功出队、失败保留并记 last_error）。
+    另可用 `local_kb.py flush` 手动补交。
+13. **产物闭环**：本地编译出的 APK 用 `local_kb.py publish` 上传云端并回填 `artifact`，
+    下一台同车型车机 100% 命中即可直接出包，无需重复编译。上传走裸二进制流 + sha256 校验，下载免令牌。
+14. **令牌读写分离**：写令牌（`ESTRELLA_KB_TOKEN`）可写库/上传产物/拉源码；只读令牌（`ESTRELLA_KB_RO_TOKEN`）
+    仅能查询/推荐/拉规则，随 Skill 公开分发也安全。含 MFi 的源码快照只认写令牌。
+15. **现成包目录云端下发**：包名/版本清单由 `GET /kb/apk_catalog_spec` 下发，新增 APK 版本不必改脚本重分发；
+    离线回落本地缓存，再回落内置目录。
 
 ## 内置可选能力（`scripts/local_kb.py` 支持）
 - 案例导出：导出全部缓存案例 JSON/CSV，可直接导入 MCP 数据库。
@@ -218,6 +229,9 @@ python scripts/preflight.py --module <模块> --flavor <flavor> [--project <源�
 | 第 1.5 步 · 从云端拉源码快照（sha256 校验） | `python scripts/pull_source.py [--dir 「父目录」] [--no-verify]` |
 | 第 2 步 · 环境与源码体检（仅编译分支） | `python scripts/preflight.py --module 「模块」 --flavor 「flavor」 [--project 「根」] [--deep-scan] [--json] [--report]` |
 | 知识库新增/导出/统计/备份/反馈 | `python scripts/local_kb.py 「upsert\|export\|stats\|backup\|report_outcome」 ...` |
+| 第 6 步 · 产物上传并回填 artifact（闭环） | `python scripts/local_kb.py publish --key 「vehicle_key」 --apk 「产物.apk」 [--name 「显示名」]` |
+| 离线队列补交（联网自动，无需手调） | `python scripts/local_kb.py flush` |
+| 改动脚本后自验 | `python scripts/smoke_test.py`（语法/help/本地往返/离线队列/目录匹配/命名规范 6 项） |
 | 冲突队列查看（含仲裁建议）/ 裁决 | `python scripts/local_kb.py conflicts` / `... resolve --conflict-id 「id」 --action auto\|keep_existing\|apply_incoming` |
 | 构建 + MD5 + 签名校验 | `python scripts/build_apk.py --project 「根」 --module 「模块」 --flavor 「风味」 ...` |
 | 改前快照 / 回滚 | `python scripts/snapshot.py snapshot 「src」 「tag」` / `rollback 「tag」` |
@@ -248,6 +262,7 @@ python scripts/preflight.py --module <模块> --flavor <flavor> [--project <源�
 - `scripts/build_apk.py` — 编译打包 + 产物校验
 - `scripts/snapshot.py` — 任务快照与一键回滚
 - `scripts/verify.py` — 预编译安全校验
+- `scripts/smoke_test.py` — 改动后自验（纯标准库、离线可跑）：脚本语法 / --help / 本地往返 / 离线补交队列 / 目录匹配 / 产物命名，6 项
 - `scripts/desensitize.py` — 脱敏与入库准备
 - `assets/vehicle_summary_template.md` — 车辆信息摘要模板
 - `assets/delivery_checklist_template.md` — 交付物清单模板

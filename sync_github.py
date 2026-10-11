@@ -88,8 +88,10 @@ def main():
         os.makedirs(os.path.dirname(d), exist_ok=True)
         with open(s, "rb") as f:
             raw = f.read()
-        with open(d, "rb") as f:
-            old = f.read() if os.path.exists(d) else None
+        old = None
+        if os.path.exists(d):
+            with open(d, "rb") as f:
+                old = f.read()
         if old != raw:
             with open(d, "wb") as f:
                 f.write(raw)

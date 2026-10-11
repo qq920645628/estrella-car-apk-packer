@@ -131,6 +131,39 @@ def verify_apk(apk, build_tools):
     return report
 
 
+# 产物命名规范：<模块>-<flavor>-a<minSdk>-v<版本名>-vc<versionCode>-<体积>MB.apk
+# 例：automotive-universal-a28-v1.3.0-vc1301-24.7MB.apk
+MODULE_MIN_SDK = {"retro": 17, "legacy": 23, "mid81": 23, "automotive": 28}
+
+
+def _min_sdk(module_dir, module):
+    try:
+        for fn in ("build.gradle", "build.gradle.kts"):
+            p = os.path.join(module_dir, fn)
+            if os.path.exists(p):
+                with open(p, encoding="utf-8", errors="ignore") as f:
+                    m = re.search(r"minSdk\s*(?:=|\s)\s*(\d+)", f.read())
+                if m:
+                    return m.group(1)
+    except Exception:
+        pass
+    return MODULE_MIN_SDK.get(module, "x")
+
+
+def canonical_name(args, apk, vrep, module_dir):
+    def safe(s):
+        return re.sub(r"[^\w.\-]+", "-", str(s)).strip("-") or "x"
+    try:
+        size_mb = round(os.path.getsize(apk) / 1048576, 1)
+    except Exception:
+        size_mb = 0
+    ver = vrep.get("versionName") or args.version_name or "unknown"
+    vc = vrep.get("versionCode") or args.version_code or 0
+    sdk = _min_sdk(module_dir, args.module)
+    return "%s-%s-a%s-v%s-vc%s-%sMB.apk" % (
+        safe(args.module), safe(args.flavor), safe(sdk), safe(ver), safe(vc), size_mb)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Estrella 编译打包")
     ap.add_argument("--project", required=True)
@@ -209,7 +242,7 @@ def main():
 
     if args.out:
         os.makedirs(args.out, exist_ok=True)
-        final = os.path.join(args.out, os.path.basename(apk))
+        final = os.path.join(args.out, canonical_name(args, apk, vrep, os.path.join(build_dir, args.module)))
         shutil.copy2(apk, final)
         vrep["final_path"] = final
         result["steps"].append(f"交付: {final}")

@@ -12,7 +12,12 @@ const PORT = parseInt(process.env.PORT || '7799', 10);
 // 源码分发：仅存储，不编译（出包在用户本地）。路径可被环境变量覆盖
 const SRC_FILE = process.env.SRC_FILE || '/opt/estrella-kb/diplay-src/diplay-src.tar.gz';
 // 🔒 支持多 Token 轮换（逗号分隔），环境变量覆盖默认值
+// 读写分离：KB_TOKEN=写令牌（可写库/上传产物/拉源码），KB_RO_TOKEN=只读令牌（仅查询/推荐/拉规则）
 const TOKENS = (process.env.KB_TOKEN || '').split(',').map(s => s.trim()).filter(Boolean);
+const RO_TOKENS = (process.env.KB_RO_TOKEN || '').split(',').map(s => s.trim()).filter(Boolean);
+// 产物存储（APK 分发）：上传需写令牌，下载走 /a/<sha256>.apk 公开只读
+const ART_DIR = process.env.ART_DIR || '/opt/estrella-kb/artifacts';
+const ART_MAX_MB = parseInt(process.env.ART_MAX_MB || '200', 10);
 
 // 限频：每 IP 每分钟上限
 const RATE_LIMIT = parseInt(process.env.RATE_LIMIT || '120', 10);
@@ -21,7 +26,7 @@ const rateBuckets = new Map();
 // ---------- 白名单（车型库允许字段） ----------
 const SCALAR_FIELDS = ['make','model','year','factory_system_version','android_base_version',
   'arch','chip','dpi','screen','root_status','known_bugs','permission_limits','storage_limits',
-  'bt_limits','usb_limits','other_limits','result','source','artifact'];
+  'bt_limits','usb_limits','other_limits','result','source','artifact','artifact_meta'];
 const ALLOWED_KEYS = new Set([...SCALAR_FIELDS, 'vehicle_key','pitfalls','solutions','variants','logs']);
 const PITFALL_KEYS = new Set(['symptom','root_cause','severity','fix_ref','tags','created_at','source']);
 const SOLUTION_KEYS = new Set(['problem','steps','stability_rating','risk_level','verified_count','tags','created_at','source']);
@@ -390,10 +395,17 @@ function send(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(obj));
 }
-function auth(req) {
+function auth(req) { return authLevel(req) !== null; }
+// 令牌分级：write=写库/上传产物/拉源码(含 MFi)；read=只读查询
+function tokenOf(req) {
   const h = req.headers['authorization'] || '';
-  const t = h.startsWith('Bearer ') ? h.slice(7) : '';
-  return TOKENS.includes(t);
+  return h.startsWith('Bearer ') ? h.slice(7) : '';
+}
+function authLevel(req) {
+  const t = tokenOf(req);
+  if (TOKENS.includes(t)) return 'write';
+  if (RO_TOKENS.includes(t)) return 'read';
+  return null;
 }
 function rateLimited(ip, token) {
   const now = Date.now();
@@ -552,10 +564,26 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (p === '/health') return send(res, 200, { ok: true, ts: Date.now(), evolution: true });
+    // ---------- 产物公开下载 /a/<sha256>.apk（免令牌，供终端用户取包） ----------
+    if (p.startsWith('/a/') && req.method === 'GET') {
+      const name = path.basename(p.slice(3));
+      if (!/^[0-9a-f]{64}\.apk$/.test(name)) return send(res, 400, { error: 'bad artifact name' });
+      try {
+        const st = await fsp.stat(path.join(ART_DIR, name));
+        res.writeHead(200, {
+          'Content-Type': 'application/vnd.android.package-archive',
+          'Content-Length': st.size,
+          'Content-Disposition': 'attachment; filename="' + name + '"',
+        });
+        fs.createReadStream(path.join(ART_DIR, name)).pipe(res);
+        return;
+      } catch (e) { return send(res, 404, { error: 'artifact not found' }); }
+    }
+
     const ip = req.socket.remoteAddress || '?';
-    const authH = (req.headers['authorization'] || '');
-    const tok = authH.startsWith('Bearer ') ? authH.slice(7) : '';
-    if (!auth(req)) { noteAuthFail(ip); return send(res, 401, { error: 'unauthorized' }); }
+    const tok = tokenOf(req);
+    const lvl = authLevel(req);
+    if (!lvl) { noteAuthFail(ip); return send(res, 401, { error: 'unauthorized' }); }
     if (rateLimited(ip, tok)) return send(res, 429, { error: 'rate limited', retry_after: 60 });
     const db = await load();
 
@@ -573,6 +601,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/kb/upsert' && req.method === 'POST') {
+      if (lvl !== 'write') return send(res, 403, { error: 'read-only token cannot write' });
       const body = await readBody(req);
       body.vehicle_key = normalizeKey(body.vehicle_key);
       const key = body.vehicle_key;
@@ -591,6 +620,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/kb/report_outcome' && req.method === 'POST') {
+      if (lvl !== 'write') return send(res, 403, { error: 'read-only token cannot write' });
       const body = await readBody(req);
       body.vehicle_key = normalizeKey(body.vehicle_key);
       if (!body.vehicle_key) return send(res, 400, { error: 'vehicle_key required' });
@@ -654,6 +684,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/kb/list' && req.method === 'GET') return send(res, 200, { keys: Object.keys(db.vehicles) });
 
     if (p === '/kb/resolve' && req.method === 'POST') {
+      if (lvl !== 'write') return send(res, 403, { error: 'read-only token cannot write' });
       const body = await readBody(req);
       const c = db.conflicts.find(x => x.id === body.conflict_id);
       if (!c) return send(res, 404, { error: 'conflict not found' });
@@ -701,6 +732,7 @@ const server = http.createServer(async (req, res) => {
     // ---------- 源码分发：仅存储，不编译（出包在用户本地） ----------
     // 元数据：文件名/size/sha256，供客户端下载后校验完整性
     if (p === '/kb/source/meta' && req.method === 'GET') {
+      if (lvl !== 'write') return send(res, 403, { error: 'source snapshot (contains MFi) requires a write token' });
       try {
         const st = await fsp.stat(SRC_FILE);
         const buf = await fsp.readFile(SRC_FILE);
@@ -715,8 +747,9 @@ const server = http.createServer(async (req, res) => {
         return send(res, 404, { error: 'source not available', detail: String(e) });
       }
     }
-    // 流式下载源码 tarball（token 鉴权，与全站一致）
+    // 流式下载源码 tarball（含 MFi 凭证 → 必须是写令牌；只读令牌拒绝）
     if (p === '/kb/source' && req.method === 'GET') {
+      if (lvl !== 'write') return send(res, 403, { error: 'source snapshot (contains MFi) requires a write token' });
       try {
         const st = await fsp.stat(SRC_FILE);
         res.writeHead(200, {
@@ -730,6 +763,86 @@ const server = http.createServer(async (req, res) => {
         return;
       } catch (e) {
         return send(res, 404, { error: 'source not available', detail: String(e) });
+      }
+    }
+
+    // ---------- 产物（APK）闭环：上传 + 查询 + 回填 artifact ----------
+    // 上传走裸二进制流（APK 几十 MB，不能塞 JSON/base64），元数据放 query
+    if (p === '/kb/artifact/upload' && req.method === 'POST') {
+      if (lvl !== 'write') return send(res, 403, { error: 'read-only token cannot upload' });
+      const key = normalizeKey(url.searchParams.get('vehicle_key') || '');
+      const shaIn = (url.searchParams.get('sha256') || '').toLowerCase();
+      const rawName = url.searchParams.get('name') || 'app.apk';
+      if (!key) return send(res, 400, { error: 'vehicle_key required' });
+      if (!/^[0-9a-f]{64}$/.test(shaIn)) return send(res, 400, { error: 'sha256 required (64 lowercase hex)' });
+      await fsp.mkdir(ART_DIR, { recursive: true });
+      const tmp = path.join(ART_DIR, '.tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.apk');
+      const hash = crypto.createHash('sha256');
+      let size = 0, tooBig = false;
+      try {
+        await new Promise((resolve, reject) => {
+          const ws = fs.createWriteStream(tmp);
+          ws.on('error', reject);
+          req.on('data', c => {
+            size += c.length;
+            if (size > ART_MAX_MB * 1024 * 1024) {
+              tooBig = true; req.destroy();
+              return reject(new Error('artifact too large (max ' + ART_MAX_MB + 'MB)'));
+            }
+            hash.update(c);
+            if (!ws.write(c)) { req.pause(); ws.once('drain', () => req.resume()); }
+          });
+          req.on('end', () => ws.end(resolve));
+          req.on('error', reject);
+        });
+      } catch (e) {
+        try { await fsp.unlink(tmp); } catch (_) {}
+        return send(res, tooBig ? 413 : 400, { error: String((e && e.message) || e) });
+      }
+      const sha = hash.digest('hex');
+      if (sha !== shaIn) {
+        try { await fsp.unlink(tmp); } catch (_) {}
+        return send(res, 400, { error: 'sha256 mismatch', expected: shaIn, actual: sha, size });
+      }
+      const final = path.join(ART_DIR, sha + '.apk');
+      await fsp.rename(tmp, final);
+      const st = await fsp.stat(final);
+      const rel = '/a/' + sha + '.apk';
+      const meta = {
+        name: String(rawName).replace(/[^\w.\-]/g, '_').slice(0, 80),
+        size: st.size, sha256: sha, uploaded_at: new Date().toISOString(),
+      };
+      let created = false;
+      if (!db.vehicles[key]) {
+        db.vehicles[key] = { vehicle_key: key, result: 'unknown', source: 'artifact_upload', created_at: meta.uploaded_at };
+        created = true;
+      }
+      const v = db.vehicles[key];
+      v.artifact = rel; v.artifact_meta = meta; v.updated_at = meta.uploaded_at;
+      db.artifacts = db.artifacts || {};
+      db.artifacts[sha] = Object.assign({ vehicle_key: key }, meta);
+      auditLog({ op: 'artifact_upload', key, sha256: sha, size: st.size });
+      await enqueueWrite();
+      return send(res, 200, {
+        ok: true, key, artifact: rel, url: rel, created_record: created, meta,
+        note: '产物已上传并回填 artifact，下次同车型 100% 命中可直接出包',
+      });
+    }
+
+    if (p === '/kb/artifact/get' && req.method === 'GET') {
+      const key = normalizeKey(url.searchParams.get('key') || '');
+      const v = key ? db.vehicles[key] : null;
+      if (!v || !v.artifact) return send(res, 200, { found: false, key });
+      return send(res, 200, { found: true, key, artifact: v.artifact, meta: v.artifact_meta || null });
+    }
+
+    // ---------- 现成包目录云端下发（新增 APK 版本不必改 Skill 重分发） ----------
+    if (p === '/kb/apk_catalog_spec' && req.method === 'GET') {
+      try {
+        const j = JSON.parse(await fsp.readFile(path.join(KB_DIR, 'apk_catalog.json'), 'utf8'));
+        return send(res, 200, Object.assign({ source: 'cloud' }, j));
+      } catch (e) {
+        return send(res, 200, { spec_version: 0, items: [], source: 'builtin', note: '云端未配置目录，客户端回落内置 CATALOG' });
       }
     }
 

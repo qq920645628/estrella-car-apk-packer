@@ -335,17 +335,95 @@ def _compute_stats(kb):
     }
 
 
+# 只读令牌：随 Skill 公开发分发也安全（不能写库、不能上传产物、不能拉含 MFi 的源码快照）
+MCP_KB_RO_TOKEN = os.environ.get("ESTRELLA_KB_RO_TOKEN", "")
+
+
+def _auth_token() -> str:
+    """写令牌优先；ESTRELLA_KB_READONLY=1 时强制走只读令牌（对外分发 Skill 时使用）。"""
+    if os.environ.get("ESTRELLA_KB_READONLY") == "1":
+        return MCP_KB_RO_TOKEN or MCP_KB_TOKEN
+    return MCP_KB_TOKEN or MCP_KB_RO_TOKEN
+
+
+# ---------------- 离线补交队列（MCP 不可达时不丢数据） ----------------
+def pending_file() -> str:
+    return os.path.join(data_dir(), "pending_queue.jsonl")
+
+
+def _enqueue_pending(op, payload):
+    """MCP 不可达时把写操作落盘，等联网后自动补交（否则离线数据永久滞留本地）。"""
+    try:
+        with open(pending_file(), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"op": op, "payload": payload, "ts": _now()}, ensure_ascii=False) + "\n")
+        return True
+    except Exception as e:
+        print("[warn] 待补交队列写入失败: %s" % e, file=sys.stderr)
+        return False
+
+
+def flush_pending(verbose=True):
+    """联网后自动补交：成功出队，失败保留并记 last_error。返回 (sent, remain)。"""
+    pf = pending_file()
+    if not os.path.exists(pf):
+        return 0, 0
+    try:
+        with open(pf, "r", encoding="utf-8") as f:
+            items = [json.loads(line) for line in f if line.strip()]
+    except Exception:
+        return 0, 0
+    if not items:
+        return 0, 0
+    sent, keep = 0, []
+    for it in items:
+        try:
+            op = it.get("op")
+            if op == "upsert":
+                cmd_upsert_mcp(it["payload"], silent=True)
+            elif op == "report_outcome":
+                cmd_report_outcome_mcp(it["payload"], silent=True)
+            else:
+                continue
+            sent += 1
+        except Exception as e:
+            it["last_error"] = str(e)
+            keep.append(it)
+    try:
+        with open(pf, "w", encoding="utf-8") as f:
+            for it in keep:
+                f.write(json.dumps(it, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print("[warn] 补交队列回写失败: %s" % e, file=sys.stderr)
+    if verbose and (sent or keep):
+        print("[补交] 已成功补交 %d 条，失败保留 %d 条（下次联网自动重试）" % (sent, len(keep)), file=sys.stderr)
+    return sent, len(keep)
+
+
 # ---------------- MCP 后端 (线上) ----------------
 def _mcp_request(method, path, params=None, json_body=None, timeout=15):
     url = MCP_KB_BASE_URL.rstrip("/") + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
     data = None
-    headers = {"Authorization": "Bearer " + MCP_KB_TOKEN}
+    headers = {"Authorization": "Bearer " + _auth_token()}
     if json_body is not None:
         data = json.dumps(json_body, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json; charset=utf-8"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _mcp_upload_raw(path, raw, params, timeout=300):
+    """裸二进制上传（APK 几十 MB，不能塞 JSON/base64）。"""
+    url = MCP_KB_BASE_URL.rstrip("/") + path
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(
+        url, data=raw, method="POST",
+        headers={"Authorization": "Bearer " + _auth_token(),
+                 "Content-Type": "application/octet-stream"},
+    )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -377,11 +455,14 @@ def cmd_query_mcp(key, params=None):
         print(json.dumps(r, ensure_ascii=False, indent=2))
 
 
-def cmd_upsert_mcp(rec):
+def cmd_upsert_mcp(rec, silent=False):
     clean = desensitize_record(rec)  # 入库前强制脱敏（值级）
     r = _mcp_request("POST", "/kb/upsert", json_body=clean)
+    if silent:
+        return r
     r["source_tag"] = "MCP知识库（线上）"
     print(json.dumps(r, ensure_ascii=False, indent=2))
+    return r
 
 
 def cmd_recommend_mcp(params):
@@ -396,10 +477,46 @@ def cmd_recommend_mcp(params):
     print(json.dumps(r, ensure_ascii=False, indent=2))
 
 
-def cmd_report_outcome_mcp(body):
+def cmd_report_outcome_mcp(body, silent=False):
     r = _mcp_request("POST", "/kb/report_outcome", json_body=body)
+    if silent:
+        return r
     r["source_tag"] = "MCP知识库（线上）"
     print(json.dumps(r, ensure_ascii=False, indent=2))
+    return r
+
+
+def cmd_publish(vehicle_key, apk_path, name=None):
+    """产物闭环：把本地编译出的 APK 上传云端并回填 artifact，下次同车型 100% 命中可直接出包。"""
+    apk_path = os.path.abspath(apk_path)
+    if not os.path.isfile(apk_path):
+        print(json.dumps({"error": "APK 不存在", "path": apk_path}, ensure_ascii=False, indent=2))
+        return 1
+    h = hashlib.sha256()
+    size = 0
+    with open(apk_path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+            size += len(chunk)
+    sha = h.hexdigest()
+    params = {
+        "vehicle_key": normalize_key(vehicle_key),
+        "sha256": sha,
+        "name": name or os.path.basename(apk_path),
+    }
+    with open(apk_path, "rb") as f:
+        raw = f.read()
+    try:
+        r = _mcp_upload_raw("/kb/artifact/upload", raw, params)
+    except Exception as e:
+        print(json.dumps({"error": "上传失败", "detail": str(e), "sha256": sha, "size": size},
+                         ensure_ascii=False, indent=2))
+        return 1
+    r["local_file"] = apk_path
+    r["size_mb"] = round(size / 1048576, 2)
+    r["download_url"] = MCP_KB_BASE_URL.rstrip("/") + (r.get("artifact") or "")
+    print(json.dumps(r, ensure_ascii=False, indent=2))
+    return 0
 
 
 def cmd_stats_mcp():
@@ -666,6 +783,9 @@ def main():
     p = sub.add_parser("export"); p.add_argument("--format", choices=["csv", "json"], default="json"); p.add_argument("--out")
     sub.add_parser("stats")
     p = sub.add_parser("resolve"); p.add_argument("--conflict-id", required=True); p.add_argument("--action", default="keep_existing", choices=["apply_incoming", "keep_existing", "auto"])
+    p = sub.add_parser("publish"); p.add_argument("--key", required=True); p.add_argument("--apk", required=True)
+    p.add_argument("--name", default=None, help="可选：产物显示名，默认取文件名")
+    sub.add_parser("flush", help="手动补交离线队列（正常联网时会自动补交，无需手调）")
     sub.add_parser("conflicts")
     sub.add_parser("backup")
     ap.add_argument("--backend", choices=["mcp", "local"], default=DEFAULT_BACKEND)
@@ -698,16 +818,31 @@ def main():
         run_local()
         return
 
+    payload = None
     try:
+        if args.cmd == "publish":
+            sys.exit(cmd_publish(args.key, args.apk, args.name))
+        if args.cmd == "flush":
+            s, r = flush_pending(verbose=True)
+            print(json.dumps({"flushed": s, "remain": r}, ensure_ascii=False))
+            return
+        # 联网首动作：先补交离线期间积压的写操作（ping 通过才补，避免离线时空等超时）
+        try:
+            _mcp_request("GET", "/kb/stats", timeout=6)
+            flush_pending(verbose=True)
+        except Exception:
+            pass
         if args.cmd == "query":
             qparams = _read_json_file(args.params) if args.params else None
             cmd_query_mcp(args.key, params=qparams)
         elif args.cmd == "upsert":
-            cmd_upsert_mcp(_read_json_file(args.json))
+            payload = _read_json_file(args.json)
+            cmd_upsert_mcp(payload)
         elif args.cmd == "recommend":
             cmd_recommend_mcp(_read_json_file(args.json))
         elif args.cmd == "report_outcome":
-            cmd_report_outcome_mcp(_read_json_file(args.json))
+            payload = _read_json_file(args.json)
+            cmd_report_outcome_mcp(payload)
         elif args.cmd == "list":
             cmd_list_mcp()
         elif args.cmd == "export":
@@ -723,6 +858,10 @@ def main():
             cmd_backup()
     except Exception as e:
         print(f"[warn] MCP 调用失败，回退本地缓存: {e}", file=sys.stderr)
+        # 离线不丢数据：写操作落待补交队列，联网后自动补交
+        if args.cmd in ("upsert", "report_outcome") and payload is not None:
+            if _enqueue_pending(args.cmd, payload):
+                print("[info] 已写入待补交队列，联网后自动补交", file=sys.stderr)
         run_local()
 
 

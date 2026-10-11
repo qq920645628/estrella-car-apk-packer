@@ -160,6 +160,70 @@ VEHICLE_MAP = {
 }
 
 # 搜索根（运行时 glob）。优先桌面「DiPlay-全部版本」，其次桌面、下载站待扩展
+# ----------------------------------------------------------------------------
+# 云端目录：新增 APK 版本只需在服务端改 apk_catalog.json，无需改本脚本重分发。
+# 不可达时回落本地缓存，再回落内置 CATALOG。
+# ----------------------------------------------------------------------------
+ACTIVE_CATALOG = list(CATALOG)
+CATALOG_SOURCE = "builtin"
+_SPEC_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", ".apk_catalog_spec.json")
+
+
+def _kb_token():
+    t = os.environ.get("ESTRELLA_KB_TOKEN") or os.environ.get("ESTRELLA_KB_RO_TOKEN")
+    if t:
+        return t
+    try:  # 复用 local_kb 的令牌常量，避免在本脚本再硬编码一份
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from local_kb import _auth_token
+        return _auth_token()
+    except Exception:
+        return ""
+
+
+def refresh_catalog(timeout=6):
+    """拉取云端目录并合并（同 id 云端覆盖内置）。返回 (source, cloud_count)。"""
+    global ACTIVE_CATALOG, CATALOG_SOURCE
+    items, src = [], "builtin"
+    if os.environ.get("ESTRELLA_NO_CLOUD") == "1":
+        ACTIVE_CATALOG, CATALOG_SOURCE = list(CATALOG), "builtin"
+        return CATALOG_SOURCE, 0
+    try:
+        import urllib.request
+        base = os.environ.get("ESTRELLA_KB_URL", "http://106.12.162.224:7799")
+        req = urllib.request.Request(
+            base.rstrip("/") + "/kb/apk_catalog_spec",
+            headers={"Authorization": "Bearer " + _kb_token()})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            j = json.loads(r.read().decode("utf-8"))
+        items = j.get("items") or []
+        src = "cloud" if items else "builtin"
+        if items:
+            try:
+                with open(_SPEC_CACHE, "w", encoding="utf-8") as f:
+                    json.dump(j, f, ensure_ascii=False)
+            except Exception:
+                pass
+    except Exception:
+        try:
+            with open(_SPEC_CACHE, "r", encoding="utf-8") as f:
+                items = json.load(f).get("items") or []
+                src = "cache"
+        except Exception:
+            items, src = [], "builtin"
+    merged = list(CATALOG)
+    ids = {i.get("id") for i in merged}
+    for c in items:
+        if not isinstance(c, dict):
+            continue
+        if c.get("id") in ids:
+            merged = [c if i.get("id") == c.get("id") else i for i in merged]
+        else:
+            merged.append(c)
+    ACTIVE_CATALOG, CATALOG_SOURCE = merged, src
+    return CATALOG_SOURCE, len(items)
+
+
 SEARCH_ROOTS = [
     os.path.join(os.path.expanduser("~"), "Desktop", "DiPlay-全部版本"),
     os.path.join(os.path.expanduser("~"), "Desktop"),
@@ -214,7 +278,7 @@ def match(android=None, features=None, vehicle=None, brand=None, model=None, yea
 
     feats = [f.lower() for f in (features or [])]
     cands = []
-    for item in CATALOG:
+    for item in ACTIVE_CATALOG:
         # 安卓区间过滤
         if android is not None:
             if not (item["android_min"] <= android <= item["android_max"]):
@@ -245,7 +309,7 @@ def match(android=None, features=None, vehicle=None, brand=None, model=None, yea
 
     if not cands and android is not None:
         # 放宽：返回同档但特性不匹配的，作为“需确认”备选
-        for item in CATALOG:
+        for item in ACTIVE_CATALOG:
             if item["android_min"] <= android <= item["android_max"]:
                 item["_score"] = -1
                 cands.append(item)
@@ -275,7 +339,7 @@ def locate(item, extra_dirs=None):
 
 
 def cmd_list():
-    for it in CATALOG:
+    for it in ACTIVE_CATALOG:
         print(f"[{it['android_min']}~{it['android_max']}] {it['name']} "
               f"({it['size_mb']}MB) features={','.join(it['features'])}")
         print(f"      file: {it['file']}")
@@ -317,8 +381,13 @@ def main():
     ap.add_argument("--dir", help="额外搜索目录")
     ap.add_argument("--list", action="store_true", help="列出全部已知包")
     ap.add_argument("--no-source", action="store_true", help="无源码模式：只走现成包，不提示编译分支")
+    ap.add_argument("--no-cloud", action="store_true", help="不拉云端目录，仅用内置 CATALOG")
     ap.add_argument("--json", action="store_true", help="JSON 输出")
     args = ap.parse_args()
+
+    if args.no_cloud:
+        os.environ["ESTRELLA_NO_CLOUD"] = "1"
+    src, cloud_n = refresh_catalog()
 
     if args.list:
         cmd_list()
