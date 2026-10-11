@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.idea/
+.vscode/
+.DS_Store
+*.log
+
+# 本地知识库真实数据不入库（仅提交 templates）
+data/backups/
+data/audit.log.jsonl
+
+# 密钥与签名配置
+*.jks
+*.keystore
+keystore.properties
+.env
+
+# 构建产物
+build/
+*.apk

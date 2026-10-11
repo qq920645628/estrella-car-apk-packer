@@ -1,0 +1,7 @@
+{
+  "vehicles": {},
+  "conflicts": [],
+  "meta": {
+    "note": "本地缓存模板；首次 upsert 自动生成记录"
+  }
+}
